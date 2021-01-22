@@ -22,7 +22,7 @@ ui <- fluidPage(
     sidebarLayout(
         sidebarPanel(
             uiOutput('speeches'),
-
+            
             textAreaInput('own', 'Paste your speech here', rows = 7),
             
             sliderInput('num', 'Use number of words', min = 10, max = 300, value = 100),
@@ -42,8 +42,10 @@ ui <- fluidPage(
         
         mainPanel(
             tabsetPanel(
+                id = 'tabs',
+                    
                 tabPanel(
-                    'Word Cloud',
+                    title = 'Word Cloud',
                     
                     br(),
                     p('The word cloud shows the most spoken words in the speech. The bigger a word is, the more frequently it is used.'),
@@ -61,14 +63,14 @@ ui <- fluidPage(
                     )
                 ),
                 tabPanel(
-                    'Word List',
+                    title = 'Word List',
                     
                     br(),
                     p('Here are the top 10 words used in the speech. Do you see any pattern?'),
                     plotOutput('words')                    
                 ),
                 tabPanel(
-                    'Sentiments',
+                    title = 'Sentiments',
                     
                     br(),
                     p('Sentiment analysis shows the positivity and negativity in the speech. A value above 0 is positive. A value below 0 is negative.'),
@@ -77,17 +79,36 @@ ui <- fluidPage(
                     plotOutput('sentiments_plot'),
                     hr(),
                     
-                    h3('Break It Down to Sentences'),
-                    tableOutput('sentiments_table')
+                    h3('Analysis by Sentences'),
+                    tableOutput('sentiments_table'),
+                    
+                    p(a('Sentiment analysis is based on the Syuzhet R package by Matthew L. Jockers', href = 'https://github.com/mjockers/syuzhet', target = '_blank'))
                 ),
                 tabPanel(
-                    'Watch Video',
+                    title = 'Emotions',
+                    
+                    br(),
+                    p('Emotion analysis shows the emotions based on words used in the sentences of the speech.'),
+                    br(),
+                    
+                    plotOutput('emotions_plot'),
+                    hr(),
+                    
+                    h3('Analysis by Sentences'),
+                    tableOutput('emotions_table'),
+
+                    p(a('Emotion analysis is based on the NRC Emotion Lexicon by Saif Mohammad', href = 'https://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm', target = '_blank'))
+                ),
+                tabPanel(
+                    title = 'Watch Video',
                     
                     h3(textOutput('video_title')),
                     tags$style(HTML('.video-container {position: relative; width: 100%; padding-bottom: 56.25%;}')),
                     tags$style(HTML('.video {position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;}')),
                     htmlOutput('video'),
-                    a('Video source: Toastmasters World Champions', href = 'https://www.youtube.com/watch?v=7Tev43VNRIc&list=PLZfLuUohfwTYDFDiFFFIl47hyPYe7Z6Xi', target = '_blank')
+                    
+                    br(),
+                    p(a('Video source: World Championship of Public Speaking', href = 'https://www.youtube.com/watch?v=7Tev43VNRIc&list=PLZfLuUohfwTYDFDiFFFIl47hyPYe7Z6Xi', target = '_blank'))
                 )
             )
         )
@@ -199,7 +220,10 @@ server <- function(input, output, session) {
                 axis.title = element_text(face = 'bold'),
                 plot.background = element_blank(),
                 panel.background = element_blank(),
+                panel.grid.major.x = element_blank(),
+                panel.grid.minor.x = element_blank(),
                 panel.grid.major.y = element_blank(),
+                panel.grid.minor.y = element_blank(),
                 legend.position = 'None'
             )
     })
@@ -214,7 +238,7 @@ server <- function(input, output, session) {
         
         get_sentences(text)
     })
-
+    
     extract_sentiments <- reactive({
         sentences <- extract_sentences()
         sentiments <- get_sentiment(sentences, method = 'syuzhet')
@@ -228,13 +252,10 @@ server <- function(input, output, session) {
     
     output$sentiments_plot <- renderPlot({
         df <- extract_sentiments()
-        speech_sentiment <- round(mean(df$Sentiment), 2)
-        print(speech_sentiment)
+        average_sentiment <- round(mean(df$Sentiment), 2)
         
         ggplot(data = df, aes(x = ID, y = Sentiment)) +
-            # geom_line(aes(color = '#CD202C')) +
-            # geom_line(aes(color = '#F2DF74')) +
-            geom_line(aes(color = 'blue')) +
+            geom_line(color = '#004165', size = 1) +
             geom_hline(yintercept = 0, colour = 'gray', size = 1) +
             labs(
                 title = 'Change of Sentiments in Speech',
@@ -243,7 +264,7 @@ server <- function(input, output, session) {
             ) +
             annotate(
                 'text', 
-                label = paste0('Overall Sentiment = ', speech_sentiment), 
+                label = paste0('Average Sentiment = ', average_sentiment),
                 x = 1,
                 y = max(df$Sentiment),
                 color = '#004165',
@@ -256,7 +277,10 @@ server <- function(input, output, session) {
                 axis.title = element_text(face = 'bold'),
                 plot.background = element_blank(),
                 panel.background = element_blank(),
+                panel.grid.major.x = element_blank(),
+                panel.grid.minor.x = element_blank(),
                 panel.grid.major.y = element_blank(),
+                panel.grid.minor.y = element_blank(),
                 legend.position = 'None'
             )
     })
@@ -264,6 +288,83 @@ server <- function(input, output, session) {
     output$sentiments_table <- renderTable(
         {
             extract_sentiments()
+        },
+        
+        striped = TRUE,
+        hover = TRUE,
+        bordered = TRUE,
+        colnames = TRUE,
+        rownames = FALSE
+    )
+    
+    extract_emotions <- reactive({
+        sentences <- extract_sentences()
+        
+        emotions <- get_nrc_sentiment(sentences)
+        emotions <- emotions[1:8]
+        colnames(emotions) <- str_to_title(colnames(emotions))
+        
+        emotions <- emotions %>%
+            mutate_if(is.numeric, as.integer)
+        
+        emotions
+    })    
+    
+    output$emotions_plot <- renderPlot({
+        df <- extract_emotions()        
+        
+        df <- data.frame(t(df))
+        df <- data.frame(rowSums(df))
+        names(df)[1] = 'Count'
+        df <- cbind('Sentiment' = rownames(df), df)
+        rownames(df) <- NULL
+        
+        ggplot(data = df, aes(x = reorder(Sentiment, desc(Sentiment)), y = Count, fill = Sentiment)) +
+            geom_bar(stat = 'identity') +
+            scale_y_continuous(breaks = 0:max(df$Count)) +
+            coord_flip() +
+            labs(
+                title = 'Emotions Used in Sentences in Speech',
+                x = 'Emotions',
+                y = 'Count'
+            ) +
+            theme_minimal() +
+            theme(
+                plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
+                axis.title = element_text(face = 'bold'),
+                plot.background = element_blank(),
+                panel.background = element_blank(),
+                panel.grid.major.x = element_blank(),
+                panel.grid.minor.x = element_blank(),
+                panel.grid.major.y = element_blank(),
+                panel.grid.minor.y = element_blank(),
+                legend.position = 'None'
+            )
+    })
+    
+    get_emotion_words <- function(emotions) {
+        emotion_words <- vector()
+
+        for (i in 1:length(emotions)) {
+            if (emotions[i] > 0) {
+                emotion_words <- c(emotion_words, names(emotions)[i])
+            }
+        }
+        
+        paste(emotion_words, collapse = ', ')
+    }
+    
+    output$emotions_table <- renderTable(
+        {
+            sentences <- extract_sentences()
+            emotions <- extract_emotions()
+            emotion_words <- apply(emotions, 1, get_emotion_words)
+            
+            data.frame(
+                'ID' = 1:length(sentences),
+                'Sentence' = sentences,
+                'Emotions' = emotion_words
+            )            
         },
         
         striped = TRUE,
@@ -298,11 +399,13 @@ server <- function(input, output, session) {
     observeEvent(input$own, {
         values$source <- 'own'
         values$df <- load_df()
+        hideTab(inputId = 'tabs', target = 'Watch Video')
     })
     
     observeEvent(input$speech, {
         values$source <- 'speech'
         values$df <- load_df()
+        showTab(inputId = 'tabs', target = 'Watch Video')
     })
     
     observeEvent(input$regenerate, {
