@@ -1,17 +1,21 @@
-library(shiny)
-library(shinythemes)
-library(wordcloud2)
-library(colourpicker)
-library(tm)
-library(stringr)
-# library(webshot)
-# library(htmlwidgets)
-# library(magick)
-library(dplyr)
-library(ggplot2)
-library(syuzhet)
+require(shiny)
+require(shinythemes)
+require(wordcloud2)
+require(colourpicker)
+require(tm)
+require(stringr)
+# require(webshot)
+# require(htmlwidgets)
+# require(magick)
+require(dplyr)
+require(ggplot2)
+require(syuzhet)
+# require(textstem)
+require(visNetwork)
+# require(searchable)
 
 # shapes <- sort(c('circle', 'cardioid', 'diamond', 'triangle-forward', 'triangle', 'pentagon', 'star'))
+shapes <- sort(c('circle', 'diamond', 'triangle-forward', 'triangle', 'pentagon', 'star'))
 
 ui <- fluidPage(
     theme = shinytheme('united'),
@@ -23,18 +27,20 @@ ui <- fluidPage(
         sidebarPanel(
             uiOutput('speeches'),
             
-            textAreaInput('own', 'Paste your speech here', rows = 7),
+            textAreaInput('own', 'Paste your speech here', rows = 5),
             
             sliderInput('num', 'Use number of words', min = 10, max = 300, value = 100),
             
             colourInput('col', 'Choose background color', value = '#EEEEEE'),
             
-            # selectInput(
-            #     'shape',
-            #     label = 'Choose shape',
-            #     choices = setNames(shapes, str_to_title(shapes)),
-            #     selected = 'circle'
-            # ),
+            selectInput(
+                'shape',
+                label = 'Choose shape',
+                choices = setNames(shapes, str_to_title(shapes)),
+                selected = 'circle'
+            ),
+            
+            sliderInput('size', 'Font size', min = 0.5, max = 1.5, value = 0.8, step = 0.1),
             
             hr(),
             a('Made by Ricky Soo | Feedback welcomed', href = 'https://github.com/rickysoo', target = '_blank')
@@ -43,7 +49,7 @@ ui <- fluidPage(
         mainPanel(
             tabsetPanel(
                 id = 'tabs',
-                    
+                
                 tabPanel(
                     title = 'Word Cloud',
                     
@@ -63,19 +69,36 @@ ui <- fluidPage(
                     )
                 ),
                 tabPanel(
-                    title = 'Word List',
+                    title = 'Words',
+
+                    br(),
+                    p('These are the top 10 spoken words in the speech. Do you see any pattern?'),
                     
                     br(),
-                    p('Here are the top 10 words used in the speech. Do you see any pattern?'),
-                    plotOutput('words')                    
+                    plotOutput('words_plot')
+                ),
+                tabPanel(
+                    title = 'Correlations',
+                    
+                    br(),
+                    p('Two words are correlated with each other when they often appear together. Here are the top spoken words and their associated words.'),
+                    
+                    br(),
+                    fluidRow(
+                        column(6, sliderInput('topwords', 'Show number of top words', min = 1, max = 10, value = 5)),
+                        column(6, sliderInput('correlation', 'Minimum correlation required', min = 0, max = 1, value = 0.7, step = 0.1))
+                    ),
+                    
+                    br(),
+                    visNetworkOutput('words_associates')
                 ),
                 tabPanel(
                     title = 'Sentiments',
                     
                     br(),
                     p('Sentiment analysis shows the positivity and negativity in the speech. A value above 0 is positive. A value below 0 is negative.'),
+
                     br(),
-                    
                     plotOutput('sentiments_plot'),
                     hr(),
                     
@@ -89,14 +112,14 @@ ui <- fluidPage(
                     
                     br(),
                     p('Emotion analysis shows the emotions based on words used in the sentences of the speech.'),
-                    br(),
                     
+                    br(),
                     plotOutput('emotions_plot'),
                     hr(),
                     
                     h3('Analysis by Sentences'),
                     tableOutput('emotions_table'),
-
+                    
                     p(a('Emotion analysis is based on the NRC Emotion Lexicon by Saif Mohammad', href = 'https://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm', target = '_blank'))
                 ),
                 tabPanel(
@@ -134,7 +157,7 @@ server <- function(input, output, session) {
         speeches[[col]]
     }
     
-    load_df <- reactive({
+    load_dtm <- reactive({
         if (values$source == 'speech') {
             data <- readLines(input$speech)
         }
@@ -145,24 +168,26 @@ server <- function(input, output, session) {
             return(NULL)
         }
         
-        if(is.character(data)) {
-            corpus <- Corpus(VectorSource(data))
-            corpus <- tm_map(corpus, tolower)
-            corpus <- tm_map(corpus, removePunctuation)
-            corpus <- tm_map(corpus, removeNumbers)
-            corpus <- tm_map(corpus, removeWords, stopwords('english'))
-            corpus <- tm_map(corpus, stripWhitespace)
-            
-            # corpus_frame <- data.frame(text=unlist(sapply(corpus, `[`, "content")), stringsAsFactors=F)
-            # values$corpus <- corpus
-            # print(corpus)
-            # View(corpus_frame)
-            
-            tdm <- as.matrix(TermDocumentMatrix(corpus))
-            data <- sort(rowSums(tdm), decreasing = TRUE)
-            df <- data.frame(word = names(data), freq = as.numeric(data))
-        }
+        corpus <- VCorpus(VectorSource(data))
+        corpus <- tm_map(corpus, content_transformer(tolower))
+        corpus <- tm_map(corpus, removePunctuation)
+        corpus <- tm_map(corpus, removeNumbers)
+        corpus <- tm_map(corpus, removeWords, stopwords('english'))
+        corpus <- tm_map(corpus, stripWhitespace)
+        # corpus <- tm_map(corpus, stemDocument)
+        # corpus <- tm_map(corpus, lemmatize_strings)
+        corpus <- tm_map(corpus, PlainTextDocument)
         
+        DocumentTermMatrix(corpus)
+    })  
+    
+    load_df <- reactive({
+        dtm <- load_dtm()
+        corpus_matrix <- as.matrix(dtm)
+        
+        words <- sort(colSums(corpus_matrix), decreasing = TRUE)
+        df <- data.frame(word = names(words), freq = as.numeric(words))
+
         values$df <- head(df, n = input$num)
         values$df
     })  
@@ -174,7 +199,7 @@ server <- function(input, output, session) {
             return(NULL)
         }
         
-        wordcloud2(data = df, backgroundColor = input$col, shape = 'circle', size = 0.6, shuffle = TRUE)
+        wordcloud2(data = df, backgroundColor = input$col, shape = input$shape, size = input$size, shuffle = TRUE)
     })
     
     output$speeches <- renderUI({
@@ -197,7 +222,7 @@ server <- function(input, output, session) {
         generate_wordcloud()
     })
     
-    output$words <- renderPlot({
+    output$words_plot <- renderPlot({
         df <- values$df %>%
             head(10)
         
@@ -210,7 +235,7 @@ server <- function(input, output, session) {
             scale_y_continuous(breaks = 0:max(df$freq)) +
             coord_flip() +
             labs(
-                title = 'Top 10 Words in Speech',
+                title = 'Top 10 Spoken Words',
                 x = 'Words',
                 y = 'Count'
             ) +
@@ -226,6 +251,76 @@ server <- function(input, output, session) {
                 panel.grid.minor.y = element_blank(),
                 legend.position = 'None'
             )
+    })
+    
+    output$words_associates <- renderVisNetwork({
+        df <- values$df %>%
+            head(input$topwords)
+        
+        if (nrow(df) == 0) {
+            return(NULL)
+        }
+
+        nodes <- data.frame(
+            id = df$word,
+            label = df$word,
+            value = df$freq,
+            title = paste('Word =', df$word, '<br>Occurrences =', df$freq),
+            group = 'A'
+        )
+
+        edges <- data.frame()
+        
+        dtm <- load_dtm()
+        dtm_matrix <- as.matrix(dtm)
+
+        for (word in df$word) {
+            associates <- findAssocs(dtm, word, corlimit = input$correlation)[[1]]
+            associate_words <- names(associates)
+            
+            if (length(associate_words) == 0) {
+                next
+            }
+            
+            for (associate_word in associate_words) {
+                `%notin%` <- Negate(`%in%`)
+                
+                associate_freq <- sum(dtm_matrix[, associate_word])
+                associate_corr <- associates[associate_word]
+
+                if (associate_freq <= 2) {
+                    next
+                }
+                
+                if (associate_word %notin% nodes$id) {
+                    node <- data.frame(
+                        id = associate_word,
+                        label = associate_word,
+                        value = associate_freq,
+                        title = paste('Word =', associate_word, '<br>Occurrences =', associate_freq),
+                        group = 'B'
+                    )
+                    
+                    nodes <- rbind(nodes, node)
+                }
+                
+                edge <- data.frame(
+                    from = word,
+                    to = associate_word,
+                    value = associate_corr,
+                    title = paste('Correlation =', associate_corr),
+                    color = 'lightgreen'
+                )
+                
+                edges <- rbind(edges, edge)
+            }
+        }
+        
+        visNetwork(nodes, edges, width = '100%', height = 500, main = 'Top Spoken Words and The Associated Words') %>%
+            visGroups(groupname = 'A', color = 'red') %>%
+            visGroups(groupname = 'B', color = 'blue') %>%
+            visEdges('to')
+            # visHierarchicalLayout(direction = 'LR')
     })
     
     extract_sentences <- reactive({
@@ -344,7 +439,7 @@ server <- function(input, output, session) {
     
     get_emotion_words <- function(emotions) {
         emotion_words <- vector()
-
+        
         for (i in 1:length(emotions)) {
             if (emotions[i] > 0) {
                 emotion_words <- c(emotion_words, names(emotions)[i])
