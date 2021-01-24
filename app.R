@@ -12,7 +12,7 @@ require(ggplot2)
 require(syuzhet)
 # require(textstem)
 require(visNetwork)
-# require(searchable)
+require(igraph)
 
 # shapes <- sort(c('circle', 'cardioid', 'diamond', 'triangle-forward', 'triangle', 'pentagon', 'star'))
 shapes <- sort(c('circle', 'diamond', 'triangle-forward', 'triangle', 'pentagon', 'star'))
@@ -78,19 +78,19 @@ ui <- fluidPage(
                     plotOutput('words_plot')
                 ),
                 tabPanel(
-                    title = 'Correlations',
+                    title = 'Connections',
                     
                     br(),
-                    p('Two words are correlated with each other when they often appear together. Here are the top spoken words and their associated words.'),
+                    p('Two words are connected with each other when they often appear together. Here are the top spoken words and their connected words.'),
                     
                     br(),
                     fluidRow(
                         column(6, sliderInput('topwords', 'Show number of top words', min = 1, max = 10, value = 5)),
-                        column(6, sliderInput('correlation', 'Minimum correlation required', min = 0, max = 1, value = 0.7, step = 0.1))
+                        column(6, sliderInput('connection', 'Minimum connection required', min = 0, max = 1, value = 0.7, step = 0.1))
                     ),
                     
                     br(),
-                    visNetworkOutput('words_associates')
+                    visNetworkOutput('words_connections')
                 ),
                 tabPanel(
                     title = 'Sentiments',
@@ -162,7 +162,7 @@ server <- function(input, output, session) {
             data <- readLines(input$speech)
         }
         else if (values$source == 'own') {
-            data <- input$own
+            data <- get_sentences(input$own)
         }
         else {
             return(NULL)
@@ -253,7 +253,7 @@ server <- function(input, output, session) {
             )
     })
     
-    output$words_associates <- renderVisNetwork({
+    output$words_connections <- renderVisNetwork({
         df <- values$df %>%
             head(input$topwords)
         
@@ -266,7 +266,7 @@ server <- function(input, output, session) {
             label = df$word,
             value = df$freq,
             title = paste('Word =', df$word, '<br>Occurrences =', df$freq),
-            group = 'A'
+            group = 'Top'
         )
 
         edges <- data.frame()
@@ -275,7 +275,7 @@ server <- function(input, output, session) {
         dtm_matrix <- as.matrix(dtm)
 
         for (word in df$word) {
-            associates <- findAssocs(dtm, word, corlimit = input$correlation)[[1]]
+            associates <- findAssocs(dtm, word, corlimit = input$connection)[[1]]
             associate_words <- names(associates)
             
             if (length(associate_words) == 0) {
@@ -298,7 +298,7 @@ server <- function(input, output, session) {
                         label = associate_word,
                         value = associate_freq,
                         title = paste('Word =', associate_word, '<br>Occurrences =', associate_freq),
-                        group = 'B'
+                        group = 'Connected'
                     )
                     
                     nodes <- rbind(nodes, node)
@@ -308,7 +308,7 @@ server <- function(input, output, session) {
                     from = word,
                     to = associate_word,
                     value = associate_corr,
-                    title = paste('Correlation =', associate_corr),
+                    title = paste('Connection =', associate_corr),
                     color = 'lightgreen'
                 )
                 
@@ -316,10 +316,13 @@ server <- function(input, output, session) {
             }
         }
         
-        visNetwork(nodes, edges, width = '100%', height = 500, main = 'Top Spoken Words and The Associated Words') %>%
-            visGroups(groupname = 'A', color = 'red') %>%
-            visGroups(groupname = 'B', color = 'blue') %>%
-            visEdges('to')
+        visNetwork(nodes, edges, width = '100%', height = 500, main = 'Top Spoken Words and The Connected Words') %>%
+            visGroups(groupname = 'Top', color = 'red') %>%
+            visGroups(groupname = 'Connected', color = 'blue') %>%
+            visEdges('to') %>%
+            # visLegend(position = 'left', main = 'Word Types') %>%
+            visIgraphLayout(layout = 'layout_nicely')
+            # visInteraction(dragView = TRUE)
             # visHierarchicalLayout(direction = 'LR')
     })
     
