@@ -1,18 +1,21 @@
-require(shiny)
-require(shinythemes)
-require(wordcloud2)
-require(colourpicker)
-require(tm)
-require(stringr)
-require(dplyr)
-require(ggplot2)
-require(syuzhet)
-require(visNetwork)
-require(RWeka)
+library(shiny)
+library(shinythemes)
+library(wordcloud2)
+library(colourpicker)
+library(tm)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(highcharter)
+library(syuzhet)
+library(visNetwork)
+library(RWeka)
 
 shapes <- sort(c('circle', 'diamond', 'triangle-forward', 'triangle', 'pentagon', 'star'))
 
 ui <- fluidPage(
+  tags$head(includeHTML('google-analytics.html')),
+  
   theme = shinytheme('united'),
   titlePanel('Speech Cloud'),
   p('Make a word cloud and analyze your speech.'),
@@ -65,12 +68,10 @@ ui <- fluidPage(
           title = 'Words',
           
           br(),
-          plotOutput('words_plot'),
-          
-          hr(),          
+          highchartOutput('words_plot'),
           
           br(),
-          plotOutput('words_combination_plot')
+          highchartOutput('words_combination_plot')
         ),
         tabPanel(
           title = 'Connections',
@@ -94,7 +95,7 @@ ui <- fluidPage(
           p('Sentiment analysis shows the positivity and negativity in the speech. A value above 0 is positive. A value below 0 is negative.'),
           
           br(),
-          plotOutput('sentiments_plot'),
+          highchartOutput('sentiments_plot'),
           hr(),
           
           h3('Analysis by Sentences'),
@@ -109,7 +110,7 @@ ui <- fluidPage(
           p('Emotion analysis shows the emotions based on words used in the sentences of the speech.'),
           
           br(),
-          plotOutput('emotions_plot'),
+          highchartOutput('emotions_plot'),
           hr(),
           
           h3('Analysis by Sentences'),
@@ -236,7 +237,7 @@ server <- function(input, output, session) {
     generate_wordcloud()
   })
   
-  output$words_plot <- renderPlot({
+  output$words_plot <- renderHighchart({
     df <- values$df %>%
       head(10)
     
@@ -244,30 +245,38 @@ server <- function(input, output, session) {
       return(NULL)
     }
     
-    ggplot(data = df, aes(x = reorder(word, freq), y = freq, fill = word)) +
-      geom_bar(stat = 'identity') +
-      scale_y_continuous(breaks = 0:max(df$freq)) +
-      coord_flip() +
-      labs(
-        title = '10 Most Spoken Words',
-        x = 'Words',
-        y = 'Count'
-      ) +
-      theme_minimal() +
-      theme(
-        plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
-        axis.title = element_text(face = 'bold'),
-        plot.background = element_blank(),
-        panel.background = element_blank(),
-        panel.grid.major.x = element_blank(),
-        panel.grid.minor.x = element_blank(),
-        panel.grid.major.y = element_blank(),
-        panel.grid.minor.y = element_blank(),
-        legend.position = 'None'
-      )
+    df %>%
+      hchart(type = 'bar', hcaes(x = reorder(word, freq), y = freq, color = word)) %>%
+      hc_title(text = '10 Most Spoken Words', align = 'center', style = list(fontWeight = 'bold')) %>%
+      hc_xAxis(title = list(text = 'Words')) %>%
+      hc_yAxis(title = list(text = 'Count')) %>%
+      hc_add_theme(hc_theme_ffx()) %>%
+      hc_tooltip(shared = TRUE, pointFormat = '{point.y}')
+    
+    # ggplot(data = df, aes(x = reorder(word, freq), y = freq, fill = word)) +
+    #   geom_bar(stat = 'identity') +
+    #   scale_y_continuous(breaks = 0:max(df$freq)) +
+    #   coord_flip() +
+    #   labs(
+    #     title = '10 Most Spoken Words',
+    #     x = 'Words',
+    #     y = 'Count'
+    #   ) +
+    #   theme_minimal() +
+    #   theme(
+    #     plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
+    #     axis.title = element_text(face = 'bold'),
+    #     plot.background = element_blank(),
+    #     panel.background = element_blank(),
+    #     panel.grid.major.x = element_blank(),
+    #     panel.grid.minor.x = element_blank(),
+    #     panel.grid.major.y = element_blank(),
+    #     panel.grid.minor.y = element_blank(),
+    #     legend.position = 'None'
+    #   )
   })
   
-  output$words_combination_plot <- renderPlot({
+  output$words_combination_plot <- renderHighchart({
     dtm <- load_dtm(tokenize = TRUE, stopword = FALSE)
     ngram_freq <- sort(colSums(as.matrix(dtm)), decreasing = TRUE)
     
@@ -281,27 +290,35 @@ server <- function(input, output, session) {
       return(NULL)
     }
     
-    ggplot(data = df, aes(x = reorder(word, freq), y = freq, fill = word)) +
-      geom_bar(stat = 'identity') +
-      scale_y_continuous(breaks = 0:max(df$freq)) +
-      coord_flip() +
-      labs(
-        title = '10 Most Spoken Word Combinations',
-        x = 'Words',
-        y = 'Count'
-      ) +
-      theme_minimal() +
-      theme(
-        plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
-        axis.title = element_text(face = 'bold'),
-        plot.background = element_blank(),
-        panel.background = element_blank(),
-        panel.grid.major.x = element_blank(),
-        panel.grid.minor.x = element_blank(),
-        panel.grid.major.y = element_blank(),
-        panel.grid.minor.y = element_blank(),
-        legend.position = 'None'
-      )
+    df %>%
+      hchart(type = 'bar', hcaes(x = reorder(word, freq), y = freq, color = word)) %>%
+      hc_title(text = '10 Most Spoken Word Combinations', align = 'center', style = list(fontWeight = 'bold')) %>%
+      hc_xAxis(title = list(text = 'Words')) %>%
+      hc_yAxis(title = list(text = 'Count')) %>%
+      hc_add_theme(hc_theme_ffx()) %>%
+      hc_tooltip(shared = TRUE, pointFormat = '{point.y}')
+    
+    # ggplot(data = df, aes(x = reorder(word, freq), y = freq, fill = word)) +
+    #   geom_bar(stat = 'identity') +
+    #   scale_y_continuous(breaks = 0:max(df$freq)) +
+    #   coord_flip() +
+    #   labs(
+    #     title = '10 Most Spoken Word Combinations',
+    #     x = 'Words',
+    #     y = 'Count'
+    #   ) +
+    #   theme_minimal() +
+    #   theme(
+    #     plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
+    #     axis.title = element_text(face = 'bold'),
+    #     plot.background = element_blank(),
+    #     panel.background = element_blank(),
+    #     panel.grid.major.x = element_blank(),
+    #     panel.grid.minor.x = element_blank(),
+    #     panel.grid.major.y = element_blank(),
+    #     panel.grid.minor.y = element_blank(),
+    #     legend.position = 'None'
+    #   )
   })
   
   output$words_connections <- renderVisNetwork({
@@ -395,45 +412,71 @@ server <- function(input, output, session) {
     )
   })    
   
-  get_overall_sentiment <- reactive({
+  get_speech_sentiment <- reactive({
     sentences <- extract_sentences()
     speech <- paste(sentences, collapse = ' ')
     get_sentiment(speech, method = 'syuzhet')
   })    
   
-  output$sentiments_plot <- renderPlot({
+  output$sentiments_plot <- renderHighchart({
     df <- extract_sentiments()
-    overall_sentiment <- get_overall_sentiment()
+    speech_sentiment <- get_speech_sentiment()
     
-    ggplot(data = df, aes(x = ID, y = Sentiment)) +
-      geom_line(color = '#004165', size = 1) +
-      geom_hline(yintercept = 0, colour = 'gray', size = 1) +
-      labs(
-        title = 'Change of Sentiments in Speech',
-        x = 'Sentences',
-        y = 'Sentiment'
-      ) +
-      annotate(
-        'text', 
-        label = paste0('Speech Sentiment = ', overall_sentiment),
-        x = 1,
-        y = max(df$Sentiment),
-        color = '#004165',
-        size = 5,
-        hjust = 0
-      ) +
-      theme_minimal() +
-      theme(
-        plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
-        axis.title = element_text(face = 'bold'),
-        plot.background = element_blank(),
-        panel.background = element_blank(),
-        panel.grid.major.x = element_blank(),
-        panel.grid.minor.x = element_blank(),
-        panel.grid.major.y = element_blank(),
-        panel.grid.minor.y = element_blank(),
-        legend.position = 'None'
-      )
+    df %>%
+      hchart(type = 'line', hcaes(x = ID, y = Sentiment)) %>%
+      hc_title(text = 'Change of Sentiments in Speech', align = 'center', style = list(fontWeight = 'bold')) %>%
+      hc_xAxis(
+        title = list(text = 'Sentences')
+      ) %>%
+      hc_yAxis(
+        plotLines = list(
+          list(
+            color = 'gray',
+            width = 2,
+            value = 0
+          )
+        ),
+        title = list(text = 'Sentiment')
+      ) %>%
+      hc_annotations(
+        list(
+          labels = list(
+            list(point = list(x = 1, y = max(df$Sentiment), xAxis = 0, yAxis = 0), text = paste('Speech Sentiment =', speech_sentiment))
+          )
+        )
+      ) %>%
+      hc_add_theme(hc_theme_ffx()) %>%
+      hc_tooltip(shared = TRUE, headerFormat = 'Sentence {point.x} <br>Sentiment = ', pointFormat = '{point.y}')
+    
+    # ggplot(data = df, aes(x = ID, y = Sentiment)) +
+    #   geom_line(color = '#004165', size = 1) +
+    #   geom_hline(yintercept = 0, colour = 'gray', size = 1) +
+    #   labs(
+    #     title = 'Change of Sentiments in Speech',
+    #     x = 'Sentences',
+    #     y = 'Sentiment'
+    #   ) +
+    #   annotate(
+    #     'text', 
+    #     label = paste0('Speech Sentiment = ', speech_sentiment),
+    #     x = 1,
+    #     y = max(df$Sentiment),
+    #     color = '#004165',
+    #     size = 5,
+    #     hjust = 0
+    #   ) +
+    #   theme_minimal() +
+    #   theme(
+    #     plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
+    #     axis.title = element_text(face = 'bold'),
+    #     plot.background = element_blank(),
+    #     panel.background = element_blank(),
+    #     panel.grid.major.x = element_blank(),
+    #     panel.grid.minor.x = element_blank(),
+    #     panel.grid.major.y = element_blank(),
+    #     panel.grid.minor.y = element_blank(),
+    #     legend.position = 'None'
+    #   )
   })
   
   output$sentiments_table <- renderTable(
@@ -461,7 +504,7 @@ server <- function(input, output, session) {
     emotions
   })    
   
-  output$emotions_plot <- renderPlot({
+  output$emotions_plot <- renderHighchart({
     df <- extract_emotions()        
     
     df <- data.frame(t(df))
@@ -470,27 +513,35 @@ server <- function(input, output, session) {
     df <- cbind('Sentiment' = rownames(df), df)
     rownames(df) <- NULL
     
-    ggplot(data = df, aes(x = reorder(Sentiment, desc(Sentiment)), y = Count, fill = Sentiment)) +
-      geom_bar(stat = 'identity') +
-      scale_y_continuous(breaks = 0:max(df$Count)) +
-      coord_flip() +
-      labs(
-        title = 'Emotions Used in Sentences in Speech',
-        x = 'Emotions',
-        y = 'Count'
-      ) +
-      theme_minimal() +
-      theme(
-        plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
-        axis.title = element_text(face = 'bold'),
-        plot.background = element_blank(),
-        panel.background = element_blank(),
-        panel.grid.major.x = element_blank(),
-        panel.grid.minor.x = element_blank(),
-        panel.grid.major.y = element_blank(),
-        panel.grid.minor.y = element_blank(),
-        legend.position = 'None'
-      )
+    df %>%
+      hchart(type = 'bar', hcaes(x = Sentiment, y = Count, color = Sentiment)) %>%
+      hc_title(text = 'Emotions Used in Speech', align = 'center', style = list(fontWeight = 'bold')) %>%
+      hc_xAxis(title = list(text = 'Emotions')) %>%
+      hc_yAxis(title = list(text = 'Count')) %>%
+      hc_add_theme(hc_theme_ffx()) %>%
+      hc_tooltip(shared = TRUE, pointFormat = '{point.y}')
+    
+    # ggplot(data = df, aes(x = reorder(Sentiment, desc(Sentiment)), y = Count, fill = Sentiment)) +
+    #   geom_bar(stat = 'identity') +
+    #   scale_y_continuous(breaks = 0:max(df$Count)) +
+    #   coord_flip() +
+    #   labs(
+    #     title = 'Emotions Used in Sentences in Speech',
+    #     x = 'Emotions',
+    #     y = 'Count'
+    #   ) +
+    #   theme_minimal() +
+    #   theme(
+    #     plot.title = element_text(face = 'bold', size = 14, hjust = 0.5),
+    #     axis.title = element_text(face = 'bold'),
+    #     plot.background = element_blank(),
+    #     panel.background = element_blank(),
+    #     panel.grid.major.x = element_blank(),
+    #     panel.grid.minor.x = element_blank(),
+    #     panel.grid.major.y = element_blank(),
+    #     panel.grid.minor.y = element_blank(),
+    #     legend.position = 'None'
+    #   )
   })
   
   get_emotion_words <- function(emotions) {
